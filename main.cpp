@@ -1,0 +1,411 @@
+#include <iostream>
+#include <cstdint>
+#include <ctime>
+#include <chrono>
+#include <random>
+using namespace std;
+using namespace chrono;
+
+static const int Length = 2;
+
+class BigInteger{
+
+private:
+    static const int SizeOfNumber = 2048;
+    static const int WordLength = 32;
+    static const uint64_t Base = 1ULL << WordLength;
+
+    uint64_t Word[SizeOfNumber];
+
+public:
+
+BigInteger() {
+    fill(Word, Word+SizeOfNumber, 0);
+}
+
+void Convert(uint64_t x) {
+    fill(Word, Word+SizeOfNumber, 0);
+    Word[0] = x & (Base - 1);
+    Word[1] = x >> WordLength;
+}
+
+BigInteger Generate() {
+    BigInteger C;
+    static mt19937_64 rng(random_device{}());
+    uniform_int_distribution<uint64_t> dist(0, Base - 1);
+
+    for (int i = 0; i < Length; i++) {
+        Word[i] = dist(rng);
+    }
+    return C;
+}
+
+void Print() const {
+    bool zero = true;
+    for (int i = SizeOfNumber - 1; i >= 0; i--){
+        if (Word[i] != 0) zero = false;
+        if (!zero) cout << hex << Word[i] << " ";
+    }
+    if (zero) cout << "0";
+    cout << "\n________\n";
+}
+
+int LongCompare(const BigInteger &x, const BigInteger &y)const{
+    for (int i = SizeOfNumber - 1; i >= 0; i--){
+        if (x.Word[i] > y.Word[i]) return 1;
+        if (x.Word[i] < y.Word[i]) return -1;
+        }
+    return 0;
+}
+
+BigInteger Addition(const BigInteger &x)const{
+    uint64_t carry = 0;
+    BigInteger C;
+
+    for (int i = 0; i < SizeOfNumber; i++){
+        uint64_t temp = Word[i] + x.Word[i] + carry;
+        C.Word[i] = temp & (Base - 1);
+        carry = temp >> WordLength;
+    }
+    return C;
+}
+
+BigInteger Subtraction(const BigInteger &x)const{
+    BigInteger C;
+    if (LongCompare(*this, x) < 0){
+        cerr << "Negative values not supported. \n";
+        return C;
+    };
+
+    uint64_t borrow = 0;
+
+    for (int i = 0; i < SizeOfNumber; i++){
+        uint64_t a1 = Word[i];
+        uint64_t a2 = x.Word[i] + borrow;
+
+        if (a1 >= a2){
+            C.Word[i] = a1 - a2;
+            borrow = 0;
+        }
+        else {
+            C.Word[i] = Base + a1 - a2;
+            borrow = 1;
+        }
+    }
+    return C;
+}
+
+BigInteger ShiftToHigh(int k)const{
+    BigInteger C;
+    if (k <= 0) return *this;
+    if (k >= SizeOfNumber) return C;
+    for (int i = SizeOfNumber - 1; i >= k; --i) {
+        C.Word[i] = Word[i - k];
+    }
+    fill(C.Word, C.Word + k, 0);
+    return C;
+}
+
+BigInteger LongMulOneDigit(uint64_t j) const {
+    BigInteger C;
+    uint64_t carry = 0;
+
+    for (int i = 0; i < SizeOfNumber; ++i) {
+        uint64_t temp = Word[i] * j + carry;
+        C.Word[i] = temp & (Base - 1);
+        carry = temp >> WordLength;
+    }
+
+    return C;
+}
+
+BigInteger LongMul(const BigInteger &x)const{
+    BigInteger C;
+
+    for (int i = 0; i < SizeOfNumber; i++){
+        if (x.Word[i] == 0) continue;
+        BigInteger temp = LongMulOneDigit(x.Word[i]);
+        temp = temp.ShiftToHigh(i);
+        C = C.Addition(temp);
+    }
+    return C;
+}
+
+string ToBinaryString() const {
+    string result;
+    result.reserve(SizeOfNumber * WordLength);
+
+    bool started = false;
+    for (int i = SizeOfNumber - 1; i >= 0; --i) {
+        uint64_t word = Word[i];
+        for (int Bit = WordLength - 1; Bit >= 0; --Bit) {
+            bool BitVal = (word >> Bit) & 1U;
+            if (BitVal) started = true;
+            if (started) result.push_back(BitVal ? '1' : '0');
+        }
+    }
+
+    if (!started) return "0";
+    return result;
+}
+
+BigInteger FromBinaryString(const string& Bin) const {
+    BigInteger C;
+    fill(C.Word, C.Word + SizeOfNumber, 0);
+
+    int Len = Bin.size();
+    uint64_t BitPos = 0;
+
+    for (int i = Len - 1; i >= 0 && BitPos < SizeOfNumber * WordLength; --i, ++BitPos) {
+        if (Bin[i] == '1') {
+            int TargetWord = BitPos / WordLength;
+            int Bit  = BitPos % WordLength;
+            C.Word[TargetWord] |= (1U << Bit);
+            }
+    }
+    return C;
+}
+
+BigInteger ShiftBitsToHigh(uint64_t Bits) const {
+    BigInteger C;
+    if (Bits == 0) return *this;
+
+    int WordShift = Bits / WordLength;
+    int BitShift  = Bits % WordLength;
+
+    for (int i = SizeOfNumber - 1; i >= 0; --i) {
+        uint64_t Val = 0;
+
+        if (i - WordShift >= 0) Val = Word[i - WordShift] << BitShift;
+        if (BitShift && i - WordShift - 1 >= 0) Val |= Word[i - WordShift - 1] >> (WordLength - BitShift);
+
+        C.Word[i] = Val & (Base - 1);
+    }
+    return C;
+}
+
+int BitLength() const {
+    for (int i = SizeOfNumber - 1; i >= 0; --i) {
+        if (Word[i] != 0) {
+            return i * WordLength + (32 - __builtin_clz(Word[i]));
+        }
+    }
+    return 0;
+}
+
+bool GetBit(int Position) const {
+    int TargetWord = Position / WordLength;
+    int bit  = Position % WordLength;
+
+    if (TargetWord >= SizeOfNumber) return false;
+    return (Word[TargetWord] >> bit) & 1;
+}
+
+void SetBit(int Position, bool value) {
+    int TargetWord = Position / WordLength;
+    int bit  = Position % WordLength;
+
+    if (TargetWord >= SizeOfNumber) return;
+    if (value) Word[TargetWord] |= (1 << bit);
+    else Word[TargetWord] &= ~(1 << bit);
+}
+
+BigInteger LongDivRemainder(const BigInteger &Divisor) const {
+    BigInteger Quotient, Remainder;
+    BigInteger Dividend = *this;
+
+    Remainder.Convert(0);
+    Quotient.Convert(0);
+
+    int n = Dividend.BitLength();
+    int m = Divisor.BitLength();
+
+    if (m == 0) {
+        cerr << "Division by zero.\n";
+        return Quotient;
+    }
+
+    if (LongCompare(Dividend, Divisor) < 0) {
+        Remainder = Dividend;
+        return Quotient;
+    }
+
+    for (int i = n - 1; i >= 0; --i) {
+        Remainder = Remainder.ShiftBitsToHigh(1);
+
+        if (Dividend.GetBit(i)) Remainder.Word[0] |= 1;
+
+        if (LongCompare(Remainder, Divisor) >= 0) {
+            Remainder = Remainder.Subtraction(Divisor);
+            Quotient.SetBit(i, true);
+        }
+    }
+    return Remainder;
+}
+
+BigInteger LongDivQuotient(const BigInteger &Divisor) const {
+    BigInteger Quotient, Remainder;
+    BigInteger Dividend = *this;
+
+    Remainder.Convert(0);
+    Quotient.Convert(0);
+
+    int n = Dividend.BitLength();
+    int m = Divisor.BitLength();
+
+    if (m == 0) {
+        cerr << "Division by zero.\n";
+        return Quotient;
+    }
+
+    if (LongCompare(Dividend, Divisor) < 0) {
+        Remainder = Dividend;
+        return Quotient;
+    }
+
+    for (int i = n - 1; i >= 0; --i) {
+        Remainder = Remainder.ShiftBitsToHigh(1);
+
+        if (Dividend.GetBit(i)) Remainder.Word[0] |= 1;
+
+        if (LongCompare(Remainder, Divisor) >= 0) {
+            Remainder = Remainder.Subtraction(Divisor);
+            Quotient.SetBit(i, true);
+        }
+    }
+    return Quotient;
+}
+
+BigInteger LongPow(const BigInteger &x) const{
+
+    BigInteger C;
+    C.Convert(1);
+
+    BigInteger A = *this;
+    int Bits = x.BitLength();
+
+    for (int i = 0; i < Bits; i++){
+        if (x.GetBit(i)){
+            C = C.LongMul(A);
+        }
+        A = A.LongMul(A);
+    }
+    return C;
+}
+
+
+int Test(const BigInteger &x, const BigInteger &y, const BigInteger &z) const {
+    int err = 0;
+
+    BigInteger test11 = x.LongMul(y);
+    BigInteger test12 = y.LongMul(x);
+    if (LongCompare(test11, test12) != 0) {
+        err++;
+    }
+
+    BigInteger test21 = x.Addition(y).LongMul(z);
+    BigInteger test22 = x.LongMul(z).Addition(y.LongMul(z));
+    if (LongCompare(test21, test22) != 0) {
+        err++;
+    }
+
+    BigInteger test31 = x.LongMul(y).LongMul(z);
+    BigInteger test32 = x.LongMul(y.LongMul(z));
+    if (LongCompare(test31, test32) != 0) {
+        err++;
+    }
+
+    int t = 256;
+    BigInteger test41; test41.Convert(t);
+    BigInteger test42 = x.LongMul(test41);
+    BigInteger test43; test43.Convert(0);
+    for (int i = 0; i < t; i++){
+        test43 = test43.Addition(x);
+    }
+    if(LongCompare(test42, test43) != 0){
+        err++;
+    }
+
+    return err;
+}
+
+};
+
+int main(){
+
+/*
+BigInteger X1, X2, X3, Xaddition, Xsubtraction, Xmultiplication, Xdivision, Xexp;
+
+X1.Generate();
+X2.Generate();
+X3.Generate();
+
+cout << "errors: " << X1.Test(X1, X2, X3);
+*/
+
+/*
+Xaddition = X1.Addition(X2);
+Xsubtraction = X1.Subtraction(X2);
+Xmultiplication = X1.LongMul(X2);
+Xdivision = X1.LongDivRemainder(X2);
+Xexp = X1.LongPow(X2);
+
+cout << "test numbers: \n";
+X1.Print();
+X2.Print();
+cout << "addition: \n";
+Xaddition.Print();
+cout << "subtraction: \n";
+Xsubtraction.Print();
+cout << "multiplication: \n";
+Xmultiplication.Print();
+cout << "division (remainder): \n";
+Xdivision.Print();
+cout << "exponentiation: \n";
+Xexp.Print();
+*/
+
+auto time1 = nanoseconds::zero();
+auto time2 = nanoseconds::zero();
+auto time3 = nanoseconds::zero();
+auto time4 = nanoseconds::zero();
+
+int M = 10;
+
+for (int i = 0; i < M; i++){
+    BigInteger X, Y;
+    X.Generate(); Y.Generate();
+
+    auto Start1 = high_resolution_clock::now();
+        BigInteger Z1 = X.Addition(Y);
+    auto End1 = high_resolution_clock::now();
+    auto duration1 = duration_cast<nanoseconds>(End1 - Start1);
+    time1 = time1 + duration1;
+
+    auto Start2 = high_resolution_clock::now();
+        BigInteger Z2 = X.LongMul(Y);
+    auto End2 = high_resolution_clock::now();
+    auto duration2 = duration_cast<nanoseconds>(End2 - Start2);
+    time2 = time2 + duration2;
+
+    auto Start3 = high_resolution_clock::now();
+        BigInteger Z3 = X.LongDivRemainder(Y);
+    auto End3 = high_resolution_clock::now();
+    auto duration3 = duration_cast<nanoseconds>(End3 - Start3);
+    time3 = time3 + duration3;
+
+    auto Start4 = high_resolution_clock::now();
+        BigInteger Z4 = X.LongPow(Y);
+    auto End4 = high_resolution_clock::now();
+    auto duration4 = duration_cast<nanoseconds>(End4 - Start4);
+    time4 = time4 + duration4;
+}
+
+cout << "Average time per operation: \n";
+cout << "Addition: " << time1.count()/M << " nanoseconds;\n";
+cout << "Multiplication: " << time2.count()/M << " nanoseconds;\n";
+cout << "Division: " << time3.count()/M << " nanoseconds;\n";
+cout << "Exponentiation: " << time4.count()/M << " nanoseconds;\n";
+
+return 0;
+}
