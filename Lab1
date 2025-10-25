@@ -99,7 +99,7 @@ BigInteger ShiftToHigh(int k)const{
     BigInteger C;
     if (k <= 0) return *this;
     if (k >= SizeOfNumber) return C;
-    for (int i = SizeOfNumber - 1; i >= k; --i) {
+    for (int i = SizeOfNumber - 1; i >= k; i++) {
         C.Word[i] = Word[i - k];
     }
     fill(C.Word, C.Word + k, 0);
@@ -110,7 +110,7 @@ BigInteger LongMulOneDigit(uint64_t j) const {
     BigInteger C;
     uint64_t carry = 0;
 
-    for (int i = 0; i < SizeOfNumber; ++i) {
+    for (int i = 0; i < SizeOfNumber; i++) {
         uint64_t temp = Word[i] * j + carry;
         C.Word[i] = temp & (Base - 1);
         carry = temp >> WordLength;
@@ -136,9 +136,9 @@ string ToBinaryString() const {
     result.reserve(SizeOfNumber * WordLength);
 
     bool started = false;
-    for (int i = SizeOfNumber - 1; i >= 0; --i) {
+    for (int i = SizeOfNumber - 1; i >= 0; i--) {
         uint64_t word = Word[i];
-        for (int Bit = WordLength - 1; Bit >= 0; --Bit) {
+        for (int Bit = WordLength - 1; Bit >= 0; Bit--) {
             bool BitVal = (word >> Bit) & 1U;
             if (BitVal) started = true;
             if (started) result.push_back(BitVal ? '1' : '0');
@@ -156,7 +156,7 @@ BigInteger FromBinaryString(const string& Bin) const {
     int Len = Bin.size();
     uint64_t BitPos = 0;
 
-    for (int i = Len - 1; i >= 0 && BitPos < SizeOfNumber * WordLength; --i, ++BitPos) {
+    for (int i = Len - 1; i >= 0 && BitPos < SizeOfNumber * WordLength; i--, BitPos++) {
         if (Bin[i] == '1') {
             int TargetWord = BitPos / WordLength;
             int Bit  = BitPos % WordLength;
@@ -173,7 +173,7 @@ BigInteger ShiftBitsToHigh(uint64_t Bits) const {
     int WordShift = Bits / WordLength;
     int BitShift  = Bits % WordLength;
 
-    for (int i = SizeOfNumber - 1; i >= 0; --i) {
+    for (int i = SizeOfNumber - 1; i >= 0; i--) {
         uint64_t Val = 0;
 
         if (i - WordShift >= 0) Val = Word[i - WordShift] << BitShift;
@@ -185,7 +185,7 @@ BigInteger ShiftBitsToHigh(uint64_t Bits) const {
 }
 
 int BitLength() const {
-    for (int i = SizeOfNumber - 1; i >= 0; --i) {
+    for (int i = SizeOfNumber - 1; i >= 0; i--) {
         if (Word[i] != 0) {
             return i * WordLength + (32 - __builtin_clz(Word[i]));
         }
@@ -230,7 +230,7 @@ BigInteger LongDivRemainder(const BigInteger &Divisor) const {
         return Quotient;
     }
 
-    for (int i = n - 1; i >= 0; --i) {
+    for (int i = n - 1; i >= 0; i--) {
         Remainder = Remainder.ShiftBitsToHigh(1);
 
         if (Dividend.GetBit(i)) Remainder.Word[0] |= 1;
@@ -263,7 +263,7 @@ BigInteger LongDivQuotient(const BigInteger &Divisor) const {
         return Quotient;
     }
 
-    for (int i = n - 1; i >= 0; --i) {
+    for (int i = n - 1; i >= 0; i--) {
         Remainder = Remainder.ShiftBitsToHigh(1);
 
         if (Dividend.GetBit(i)) Remainder.Word[0] |= 1;
@@ -409,3 +409,4 @@ cout << "Exponentiation: " << time4.count()/M << " nanoseconds;\n";
 
 return 0;
 }
+
