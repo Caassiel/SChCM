@@ -524,7 +524,7 @@ int Test2(const BigInteger &y, const BigInteger &z, const BigInteger &mod){
     }
 
     cout << "Fermat theorem: \n";
-    BigInteger Prime; Prime.Convert(524287); //19-òå ÷èñëî Ìåðñåííà
+    BigInteger Prime; Prime.Convert(524287); //19-Ã²Ã¥ Ã·Ã¨Ã±Ã«Ã® ÃŒÃ¥Ã°Ã±Ã¥Ã­Ã­Ã 
     BigInteger test31; test31.Convert(1);
     BigInteger test32; test32 = x.ModLongPowBarett(Prime.Subtraction(test31), Prime);
     if(LongCompare(test32, test31) != 0){
