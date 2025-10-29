@@ -121,65 +121,12 @@ BigInteger LongMulOneDigit(uint32_t j) const {
 
 BigInteger LongMul(const BigInteger &x) const {
     BigInteger C;
-    C.Convert(0);
-    uint64_t temp[2 * SizeOfNumber] = {0};
 
-    for (int i = 0; i < SizeOfNumber; i++) {
-        if (Word[i] == 0) continue;
-
-        uint64_t carry = 0;
-        for (int j = 0; j < SizeOfNumber; j++) {
-            if (i + j >= 2 * SizeOfNumber) break;
-
-            unsigned __int128 mul = (unsigned __int128)Word[i] * x.Word[j];
-            unsigned __int128 sum = (unsigned __int128)temp[i + j] + mul + carry;
-
-            temp[i + j] = (uint64_t)(sum & (Base - 1));
-            carry = (uint64_t)(sum >> WordLength);
-        }
-        if (i + SizeOfNumber < 2 * SizeOfNumber) {
-            temp[i + SizeOfNumber] += carry;
-        }
-    }
-
-    for (int i = 0; i < SizeOfNumber; i++) {
-        C.Word[i] = (i < 2 * SizeOfNumber) ? (uint32_t)temp[i] : 0;
-    }
-
-    return C;
-}
-
-string ToBinaryString() const {
-    string result;
-    result.reserve(SizeOfNumber * WordLength);
-
-    bool started = false;
-    for (int i = SizeOfNumber - 1; i >= 0; --i) {
-        uint64_t word = Word[i];
-        for (int Bit = WordLength - 1; Bit >= 0; --Bit) {
-            bool BitVal = (word >> Bit) & 1U;
-            if (BitVal) started = true;
-            if (started) result.push_back(BitVal ? '1' : '0');
-        }
-    }
-
-    if (!started) return "0";
-    return result;
-}
-
-BigInteger FromBinaryString(const string& Bin) const {
-    BigInteger C;
-    fill(C.Word, C.Word + SizeOfNumber, 0);
-
-    int Len = Bin.size();
-    uint64_t BitPos = 0;
-
-    for (int i = Len - 1; i >= 0 && BitPos < (uint64_t)SizeOfNumber * WordLength; i--, BitPos++) {
-        if (Bin[i] == '1') {
-            int TargetWord = BitPos / WordLength;
-            int Bit  = BitPos % WordLength;
-            C.Word[TargetWord] |= (1U << Bit);
-            }
+    for (int i = 0; i < SizeOfNumber; i++){
+        if (x.Word[i] == 0) continue;
+        BigInteger temp = LongMulOneDigit(x.Word[i]);
+        temp = temp.ShiftToHigh(i);
+        C = C.Addition(temp);
     }
     return C;
 }
@@ -652,3 +599,4 @@ cout << "Exponentiation: " << time4.count()/M << " nanoseconds;\n";
 
 return 0;
 }
+
