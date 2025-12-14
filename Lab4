@@ -6,41 +6,43 @@ using namespace std;
 using namespace chrono;
 
 static constexpr int FIELD_BITS = 233;
+static constexpr int LIMBS = 4;
 
 class GF2_233_NB {
 public:
-    uint8_t limb[FIELD_BITS];
+    uint64_t limb[LIMBS];
+
     static uint8_t M[FIELD_BITS][FIELD_BITS];
     static bool MultMatrixBuilt;
-
+    static const uint64_t TOP_MASK = (1ULL << 41) - 1;
     GF2_233_NB() { SetZero(); }
 
-    void SetZero() { fill(limb, limb + FIELD_BITS, 0); }
-    void SetOne()  { fill(limb, limb + FIELD_BITS, 1); }
+    uint8_t GetBit(int i) const {
+        return (limb[i >> 6] >> (i & 63)) & 1;
+    }
+
+    void SetBit(int i, uint8_t v) {
+        uint64_t mask = 1ULL << (i & 63);
+        if (v) limb[i >> 6] |= mask;
+        else   limb[i >> 6] &= ~mask;
+    }
+
+    void SetZero() {for (int i = 0; i < LIMBS; i++) limb[i] = 0;}
+    void SetOne() {
+        for (int i = 0; i < LIMBS; i++) limb[i] = ~0ULL;
+        limb[3] &= TOP_MASK;
+    }
 
     void Random() {
         static mt19937_64 gen(random_device{}());
-        for (int i = 0; i < FIELD_BITS; i++) limb[i] = gen() & 1;
-    }
-
-    void PrintBinary() const {
-        for (int i = 0; i < FIELD_BITS; i++)
-            cout << (int)limb[i];
-        cout << "\n";
+        for (int i = 0; i < LIMBS; i++) limb[i] = gen();
+        limb[3] &= TOP_MASK;
     }
 
     GF2_233_NB Addition(const GF2_233_NB &b) const {
         GF2_233_NB r;
-        for (int i = 0; i < FIELD_BITS; i++)
+        for (int i = 0; i < LIMBS; i++)
             r.limb[i] = limb[i] ^ b.limb[i];
-        return r;
-    }
-
-    GF2_233_NB CyclicShiftRight(int s) const {
-        GF2_233_NB r;
-        s %= FIELD_BITS;
-        for (int i = 0; i < FIELD_BITS; i++)
-            r.limb[i] = limb[(i - s + FIELD_BITS) % FIELD_BITS];
         return r;
     }
 
@@ -48,7 +50,15 @@ public:
         GF2_233_NB r;
         s %= FIELD_BITS;
         for (int i = 0; i < FIELD_BITS; i++)
-            r.limb[i] = limb[(i + s) % FIELD_BITS];
+            r.SetBit(i, GetBit((i + s) % FIELD_BITS));
+        return r;
+    }
+
+    GF2_233_NB CyclicShiftRight(int s) const {
+        GF2_233_NB r;
+        s %= FIELD_BITS;
+        for (int i = 0; i < FIELD_BITS; i++)
+            r.SetBit(i, GetBit((i - s + FIELD_BITS) % FIELD_BITS));
         return r;
     }
 
@@ -56,31 +66,35 @@ public:
         return CyclicShiftRight(1);
     }
 
-    void BuildMatrix() const {
+    static void BuildMatrix() {
+        if (MultMatrixBuilt) return;
         const int p = 2 * FIELD_BITS + 1;
 
-        for (int i = 0; i < FIELD_BITS; i++)
-            for (int j = 0; j < FIELD_BITS; j++)
-                M[i][j] = 0;
-
-        int pow2[FIELD_BITS]; pow2[0] = 1;
-        for (int i = 1; i < FIELD_BITS; i++){
+        int pow2[FIELD_BITS];
+        pow2[0] = 1;
+        for (int i = 1; i < FIELD_BITS; i++)
             pow2[i] = (pow2[i - 1] * 2) % p;
-        }
 
         for (int i = 0; i < FIELD_BITS; i++) {
             for (int j = 0; j < FIELD_BITS; j++) {
-                int a = pow2[i]; int b = pow2[j];
-                int Results[4] = {(a + b) % p, (a - b + p) % p, (-a + b + p) % p, (-a - b + 2*p) % p};
+                int a = pow2[i], b = pow2[j];
+                int R[4] = {
+                    (a + b) % p,
+                    (a - b + p) % p,
+                    (-a + b + p) % p,
+                    (-a - b + 2 * p) % p
+                };
 
+                M[i][j] = 0;
                 for (int k = 0; k < 4; k++) {
-                    if (Results[k] == 1 || Results[k] == p - 1) {
+                    if (R[k] == 1 || R[k] == p - 1) {
                         M[i][j] = 1;
                         break;
                     }
                 }
             }
         }
+        MultMatrixBuilt = true;
     }
 
     GF2_233_NB Multiplication(const GF2_233_NB &b) const {
@@ -89,39 +103,28 @@ public:
         BuildMatrix();
 
         for (int i = 0; i < FIELD_BITS; i++) {
-            GF2_233_NB u_shifted = this->CyclicShiftLeft(i);
-            GF2_233_NB v_shifted = b.CyclicShiftLeft(i);
+            GF2_233_NB u = CyclicShiftLeft(i);
+            GF2_233_NB v = b.CyclicShiftLeft(i);
 
-            GF2_233_NB u_prime;
-            u_prime.SetZero();
-            for (int row = 0; row < FIELD_BITS; row++) {
-                uint8_t val = 0;
-                for (int col = 0; col < FIELD_BITS; col++) {
-                    val ^= u_shifted.limb[col] & M[col][row];
-                }
-                u_prime.limb[row] = val;
-            }
+            uint8_t zi = 0;
 
-            uint8_t z_i = 0;
-            for (int k = 0; k < FIELD_BITS; k++) {
-                z_i ^= u_prime.limb[k] & v_shifted.limb[k];
-            }
-            z.limb[i] = z_i;
+            for (int j = 0; j < FIELD_BITS; j++)
+                for (int k = 0; k < FIELD_BITS; k++)
+                     zi ^= u.GetBit(k) & M[j][k] & v.GetBit(j);
+
+            z.SetBit(i, zi);
         }
-
         return z;
     }
 
     int Trace() const {
-        GF2_233_NB x = *this;
-        int T = 0;
-            for (int i = 0; i < FIELD_BITS; i++){
-                T ^= (int)x.limb[i];
-            }
-        return T;
+        int t = 0;
+        for (int i = 0; i < FIELD_BITS; i++)
+            t ^= GetBit(i);
+        return t;
     }
 
-    static int toBits(int x, int bits[]) {
+    static int ToBits(int x, int bits[]) {
         int len = 0;
         while (x > 0) {
             bits[len++] = x & 1;
@@ -131,13 +134,11 @@ public:
     }
 
     GF2_233_NB InverseItohTsujii() const {
-        const int m = FIELD_BITS;
         int bits[FIELD_BITS >> 1];
-        int len = toBits(m - 1, bits);
+        int len = ToBits(FIELD_BITS - 1, bits);
 
         GF2_233_NB alpha = *this;
         GF2_233_NB beta  = alpha;
-
         int k = 1;
 
         for (int i = len - 2; i >= 0; i--) {
@@ -146,16 +147,13 @@ public:
                 beta = beta.Square();
             beta = beta.Multiplication(gamma);
 
-            k *= 2;
+            k <<= 1;
             if (bits[i]) {
-                beta = beta.Square();
-                beta = beta.Multiplication(alpha);
-                k += 1;
+                beta = beta.Square().Multiplication(alpha);
+                k++;
             }
         }
-
-        beta = beta.Square();
-        return beta;
+        return beta.Square();
     }
 
     GF2_233_NB Inverse() const {
@@ -165,64 +163,53 @@ public:
             t = t.Square();
             r = r.Multiplication(t);
         }
-
         return r;
     }
 
     GF2_233_NB Pow(const GF2_233_NB& e) const {
-        GF2_233_NB r;
-        r.SetOne();
-
-        GF2_233_NB b = *this;
-
+        GF2_233_NB t = *this;
+        GF2_233_NB r; r.SetOne();
         for (int i = FIELD_BITS - 1; i >= 0; i--) {
-            if (e.limb[i]) {
-                r = r.Multiplication(b);
-            }
-            b = b.Square();
+            if (e.GetBit(i)) r = r.Multiplication(t);
+            t = t.Square();
         }
         return r;
+    }
+
+       void PrintBinary() const {
+        for (int i = 0; i < FIELD_BITS; i++)
+            cout << (int)GetBit(i);
+        cout << "\n";
     }
 
     string PrintHex() const {
         static const char* hex = "0123456789ABCDEF";
         string s;
-        int n = (FIELD_BITS+3)/4;
+        int n = (FIELD_BITS + 3) / 4;
         s.reserve(n);
 
         for (int h = n - 1; h >= 0; h--) {
             int v = 0;
             for (int b = 0; b < 4; b++) {
-                int Index = h * 4 + b;
-                if (Index < FIELD_BITS) {
-                    int Reverse = FIELD_BITS - 1 - Index;
-                    v |= limb[Reverse] << b;
+                int idx = h * 4 + b;
+                if (idx < FIELD_BITS) {
+                    int r = FIELD_BITS - 1 - idx;
+                    v |= GetBit(r) << b;
                 }
             }
             s.push_back(hex[v]);
         }
 
         size_t p = s.find_first_not_of('0');
-        string out;
-        if (p != string::npos) out = s.substr(p);
-        else out = "0";
+        string out = (p != string::npos) ? s.substr(p) : "0";
         cout << out << "\n_________________\n";
         return out;
-    }
-
-    void PrintMatrix() const {
-    GF2_233_NB a; a.BuildMatrix();
-        for (int i = 0; i < FIELD_BITS; i++){
-            for (int j = 0; j < FIELD_BITS; j++){
-                cout << (int)a.M[i][j] << " ";
-            }
-            cout << "\n";
-        }
     }
 };
 
 uint8_t GF2_233_NB::M[FIELD_BITS][FIELD_BITS];
 bool GF2_233_NB::MultMatrixBuilt = false;
+
 
 int main() {
     GF2_233_NB a, b, c, d, e, f, g, n;
@@ -253,10 +240,10 @@ int main() {
     cout << "Trace of a: " << a.Trace() << "\n";
 
     auto time1 = nanoseconds::zero();
-    auto time2 = milliseconds::zero();
-    auto time3 = milliseconds::zero();
-    auto time4 = milliseconds::zero();
-    auto time5 = milliseconds::zero();
+    auto time2 = nanoseconds::zero();
+    auto time3 = nanoseconds::zero();
+    auto time4 = nanoseconds::zero();
+    auto time5 = nanoseconds::zero();
 
     int M = 100;
 
@@ -273,38 +260,41 @@ int main() {
         auto Start2 = high_resolution_clock::now();
             GF2_233_NB Z2 = X.Multiplication(Y);
         auto End2 = high_resolution_clock::now();
-        auto duration2 = duration_cast<milliseconds>(End2 - Start2);
+        auto duration2 = duration_cast<nanoseconds>(End2 - Start2);
         time2 = time2 + duration2;
 
         auto Start3 = high_resolution_clock::now();
             GF2_233_NB Z3 = X.Inverse();
         auto End3 = high_resolution_clock::now();
-        auto duration3 = duration_cast<milliseconds>(End3 - Start3);
+        auto duration3 = duration_cast<nanoseconds>(End3 - Start3);
         time3 = time3 + duration3;
 
         auto Start4 = high_resolution_clock::now();
             GF2_233_NB Z4 = X.InverseItohTsujii();
         auto End4 = high_resolution_clock::now();
-        auto duration4 = duration_cast<milliseconds>(End4 - Start4);
+        auto duration4 = duration_cast<nanoseconds>(End4 - Start4);
         time4 = time4 + duration4;
 
         auto Start5 = high_resolution_clock::now();
             GF2_233_NB Z5 = X.Pow(Y);
         auto End5 = high_resolution_clock::now();
-        auto duration5 = duration_cast<milliseconds>(End5 - Start5);
+        auto duration5 = duration_cast<nanoseconds>(End5 - Start5);
         time5 = time5 + duration5;
     }
 
     cout << "\n\nAverage time per operation: \n";
     cout << "Addition: " << time1.count()/M << " nanoseconds;\n";
-    cout << "Multiplication: " << time2.count()/M << " milliseconds;\n";
-    cout << "Inverse (Naive): " << time3.count()/M << " milliseconds;\n";
-    cout << "Inverse (Itoh-Tsujii): " << time4.count()/M << " milliseconds;\n";
-    cout << "Power: " << time5.count()/M << " milliseconds;\n";
+    cout << "Multiplication: " << time2.count()/M << " nanoseconds;\n";
+    cout << "Inverse (Naive): " << time3.count()/M << " nanoseconds;\n";
+    cout << "Inverse (Itoh-Tsujii): " << time4.count()/M << " nanoseconds;\n";
+    cout << "Power: " << time5.count()/M << " nanoseconds;\n";
 
 
     return 0;
 }
+
+
+
 
 
 
